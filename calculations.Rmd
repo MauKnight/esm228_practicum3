@@ -1,0 +1,61 @@
+---
+title: "Power and such"
+author: "Pat Byrne"
+date: "5/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Clear global environment
+rm(list = ls()) 
+# Load packages
+library(tidyverse)
+library(DeclareDesign)
+library(ggthemes)
+```
+
+```{r}
+puno.data <- read_csv('Puno_localities.csv')
+```
+
+```{r}
+total.pop <- sum(puno.data$Population)
+
+df.sum <- puno.data %>% 
+  filter(
+    Status %in% c('Locality')
+  ) %>% 
+  group_by(Province,Status) %>% 
+  summarize(
+    pop_pct = sum(Population)/total.pop,
+    num = n()
+  )
+
+df.province <- puno.data %>% 
+  group_by(Province) %>% 
+  summarize(
+    num = n(),
+    pop = sum(Population)
+  )
+
+df.affected <- puno.data %>% 
+  filter(
+    Province %in% c('San Antonio de Putina', 'Melgar', 'Lampa', 'El Collao', 'Azangaro')
+  ) %>% 
+  group_by(Province) %>% 
+  summarize(
+    pop_pct = sum(Population)/total.pop,
+    num = n()
+  ) 
+
+affected.pct.livestock = (233482 + 176241 + 132860 + 68291 + 54825)/694953
+```
+
+```{r}
+affected.districts <- read_csv('Puno_affected_districts.csv')
+```
+
