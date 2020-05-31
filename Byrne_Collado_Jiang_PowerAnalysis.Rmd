@@ -1,14 +1,12 @@
 ---
-title: "Power and such"
+title: "Practicum 3 Power Analysis"
 author: "Pat Byrne"
 date: "5/29/2020"
 output: html_document
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
 ```{r}
 # Clear global environment
 rm(list = ls()) 
@@ -27,40 +25,21 @@ puno.data <- read_csv('Puno_localities.csv')
 ```
 
 ```{r}
-total.pop <- sum(puno.data$Population)
-
-df.sum <- puno.data %>% 
-  filter(
-    Status %in% c('Locality')
-  ) %>% 
-  group_by(Province,Status) %>% 
-  summarize(
-    pop_pct = sum(Population)/total.pop,
-    num = n()
-  )
-
-df.province <- puno.data %>% 
-  group_by(Province) %>% 
-  summarize(
-    pop = sum(Population),
-    num = n()
-  )
-
-
+# Calculating the number of localities to be sampled
 df.affected <- puno.data %>%
   filter(
-    Province %in% c('San Antonio de Putina', 'Melgar', 'Lampa', 'El Collao', 'Azangaro')
+    Province %in% c('San Antonio de Putina', 'Melgar', 'Lampa', 'El Collao','Azangaro','Carabaya') # Alter this line to change scope of sampling
   ) %>%
   group_by(Province) %>%
   summarize(
     num = n()
   )
 
-# Total number of localities n the 5 provinces most affected 
+# Total number of localities in the provinces most affected 
 n.affected.localities <- as.numeric(sum(df.affected$num))
 
-# Total livestock deaths in the 5 provinces most affected vs total livestock deaths across Puno
-affected.pct.livestock = (233482 + 176241 + 132860 + 68291 + 54825)/694953
+# Total livestock deaths in the 6 provinces most affected (respective order as above ^^) vs total livestock deaths across Puno
+affected.pct.livestock = (132860 + 233482 + 176241 + 68291 + 54825 + 26914)/694953
 ```
 
 ```{r}
@@ -81,6 +60,7 @@ sd.mortality <- sd(c(1.58, 5.94, 1.12, 1.48, 4.47, 13.78, 0.84, 8.20, 2.71, 0.59
 
 ##declare_population()
 ```{r population, echo=TRUE}
+# There are 589 localities in the Puno Region
 population <- declare_population(
   districts = add_level(N=589, 
     livestock_mortality_pct = rgamma(n=N,  shape = 2, rate = (2/mean.mortality)),
@@ -93,6 +73,7 @@ pop <- population()
 
 ##declare_potential_outcomes()
 ```{r po, echo=TRUE}
+# This  reduction in livestock mortality because of the introduction of the early warning system is purely an estimate 
 mortality_reduction = -1
 
 potential_outcomes <- 
@@ -107,6 +88,8 @@ po <- potential_outcomes(pop)
 
 ##declare_sampling()
 ```{r sample, echo=TRUE}
+# 197 of the 589 localities in the Puno region are located in the 5 provinces that experienced 95.8% of the region's total livestock mortality in 2015. These localities will be our sample. Change 197 to 225 if Carabaya is included. 
+# We want to sample the hardest hit regions to give ourselves the best chance of seeing an effect, but also because it does not make sense and would be a bit unethical to test out a potential humanitarian aid intervention in a areas not in need of humanitarian aid
 sampling <- declare_sampling(n = 197)
 sam <- sampling(po)
 ```
@@ -118,7 +101,6 @@ assigning <- declare_assignment(m = round(nrow(sam)/2),
 assigned <- assigning(sam)
 
 # We're using DeclareDesign to randomly assign districts to treatment and control with a probability of 0.5. The variable 'm' denotes the number of units that declare_assignment() should place in each treatment condition, which we are asking to be equal to half of the sample per treatment condition (nrow(sam)/2).
-
 ```
 
 ```{r}
@@ -126,7 +108,7 @@ ggplot(data=assigned, aes(x=as.factor(D), y=livestock_mortality_pct)) +
 geom_violin(aes(fill=as.factor(D), color=as.factor(D))) +
 theme_minimal(base_size = 24) + xlab("Assignment")
 
-# Random assignment should, in expectation, produce treatment and control groups that are statistically-identical on all observed and unobserved features.
+# Random assignment should, in expectation, produce treatment and control groups that are statistically-identical on all observed and unobserved features. Doesn't look super great, but it'll do
 ```
 
 
@@ -163,13 +145,15 @@ design <- population + potential_outcomes + sampling +
 
 ##diagnose_design()
 ```{r diagnosis, cache=TRUE}
+# Uncomment if power for a single value of mortality_reduction is desired
 # diagnosis <- diagnose_design(design, sims=1000)
 # diagnosis$diagnosands_df[,c(1,3,5,9,11)] %>%
 #   kable()
 ```
 
-
+##redesign()
 ```{r}
+# Running a power analysis for a range of potential ATEs and seeing how power changes
 designs <- redesign(design, mortality_reduction=seq(from=-3, to=0, by=0.05))
 
 diagnoses <- diagnose_design(designs, sims=300)
@@ -183,37 +167,9 @@ diagnoses$diagnosands_df %>%
              color = "red") +
   labs(x='Estimated Percentage Point Reduction in Livestock Mortality (%)',
        y = 'Power',
-       title = 'Power vs Potential Average Treatment Effect, Locality-Level Treatment',
-       subtitle = 'Estimator = Difference in Differences') + 
+       title = 'Power vs Average Treatment Effect, Locality-Level Treatment in Top 5 Provinces',
+       subtitle = 'Estimator = Difference in Differences, Sample Size = 197') + 
   theme_tufte()
-```
-
-
-
-
-
-
-
-## Looking under the hood, DIM
-
-```{r underhood-dim, height=6}
-# sim.out <- diagnosis$simulations
-# hist(sim.out$estimate[sim.out$estimator_label == "DIM"],
-#      main="Randomization Distribution",
-#      xlab="Estimates in Realized Experiments",
-#      xlim=c(-10,10), cex=24)
-# abline(v=-4, lwd=3, col="red")
-```
-
-## Looking under the hood, DID
-
-```{r underhood-did, height=6}
-# sim.out <- diagnosis$simulations
-# hist(sim.out$estimate[sim.out$estimator_label == "DID"],
-#      main="Randomization Distribution",
-#      xlab="Estimates in Realized Experiments",
-#      xlim=c(-10,10), cex=24)
-# abline(v=-4, lwd=3, col="red")
 ```
 
 
@@ -222,6 +178,7 @@ diagnoses$diagnosands_df %>%
 
 ##declare_population()
 ```{r population, echo=TRUE}
+# There are 107 localities in the Puno Region
 population <- declare_population(
   dstrcts = add_level(N=107, 
     livestock_mortality_pct = rgamma(n=N, shape = 2, rate = (2/mean.mortality)),
@@ -243,13 +200,12 @@ potential_outcomes <-
     Y_D_1 = livestock_mortality_pct + u + mortality_reduction)
 
 po <- potential_outcomes(pop)
-
-# We are proposing that the unit-level treatment effect is mortality_reduction in % reduction of livestock that die from extreme frost.
 ```
 
 ##declare_sampling()
 ```{r sample, echo=TRUE}
-sampling <- declare_sampling(n = 54)
+# 44 of the 107 districts in the Puno region are located in the 5 provinces that experienced 95.8% of the region's total livestock mortality in 2015. These districts will be our sample. Change 44 to 54 if Carabaya is included.
+sampling <- declare_sampling(n = 44)
 sam <- sampling(po)
 ```
 
@@ -258,17 +214,12 @@ sam <- sampling(po)
 assigning <- declare_assignment(m = (nrow(sam)/2),
                   assignment_variable="D")
 assigned <- assigning(sam)
-
-# We're using DeclareDesign to randomly assign districts to treatment and control with a probability of 0.5. The variable 'm' denotes the number of units that declare_assignment() should place in each treatment condition, which we are asking to be equal to half of the sample per treatment condition (nrow(sam)/2).
-
 ```
 
 ```{r}
 ggplot(data=assigned, aes(x=as.factor(D), y=livestock_mortality_pct)) +
 geom_violin(aes(fill=as.factor(D), color=as.factor(D))) +
 theme_minimal(base_size = 24) + xlab("Assignment")
-
-# Random assignment should, in expectation, produce treatment and control groups that are statistically-identical on all observed and unobserved features.
 ```
 
 
@@ -295,21 +246,21 @@ did <- declare_estimator(Y - livestock_mortality_pct ~ D,
 # Difference-in-differences ([Mean of treatment group @ endline - Mean of treatment group @ baseline] - [Mean of control group @ endline - mean of control group @ baseline])
 ```
 
-
 ##declare_design()
 ```{r design, echo=TRUE}
 design <- population + potential_outcomes + sampling +
           assigning + revealing + estimand + dim + did
 ```
 
-
 ##diagnose_design()
 ```{r diagnosis, cache=TRUE}
+# Uncomment if power for a single value of mortality_reduction is desired
 # diagnosis <- diagnose_design(design, sims=500)
 # diagnosis$diagnosands_df[,c(1,3,5,9,11)] %>%
 #   kable()
 ```
 
+##redesign()
 ```{r}
 designs <- redesign(design, mortality_reduction=seq(from=-3, to=0, by=0.05))
 
@@ -325,30 +276,6 @@ diagnoses$diagnosands_df %>%
   labs(x='Estimated Percentage Point Reduction in Livestock Mortality (%)',
        y = 'Power',
        title = 'Power vs Average Treatment Effect, District-Level Treatment in Top 6 Provinces',
-       subtitle = 'Estimand = Difference in Differences, Sample Size = 54') +
+       subtitle = 'Estimator = Difference in Differences, Sample Size = 54') +
   theme_tufte()
 ```
-
-
-## Looking under the hood, DIM
-
-```{r underhood-dim, height=6}
-# sim.out <- diagnosis$simulations
-# hist(sim.out$estimate[sim.out$estimator_label == "DIM"],
-#      main="Randomization Distribution",
-#      xlab="Estimates in Realized Experiments",
-#      xlim=c(-10,10), cex=24)
-# abline(v=mortality_reduction, lwd=3, col="red")
-```
-
-## Looking under the hood, DID
-
-```{r underhood-did, height=6}
-# sim.out <- diagnosis$simulations
-# hist(sim.out$estimate[sim.out$estimator_label == "DID"],
-#      main="Randomization Distribution",
-#      xlab="Estimates in Realized Experiments",
-#      xlim=c(-10,10), cex=24)
-# abline(v=mortality_reduction, lwd=3, col="red")
-```
-
