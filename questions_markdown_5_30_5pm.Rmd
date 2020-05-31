@@ -1,14 +1,12 @@
 ---
-title: "Power and such"
+title: "Questions Markdown"
 author: "Pat Byrne"
-date: "5/29/2020"
+date: "5/30/2020"
 output: html_document
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
 ```{r}
 # Clear global environment
 rm(list = ls()) 
@@ -21,62 +19,15 @@ library(kableExtra)
 set.seed(007)
 ```
 
-```{r}
-# Reading in data table from https://www.citypopulation.de/en/peru/puno/
-puno.data <- read_csv('Puno_localities.csv')
-```
-
-```{r}
-total.pop <- sum(puno.data$Population)
-
-df.sum <- puno.data %>% 
-  filter(
-    Status %in% c('Locality')
-  ) %>% 
-  group_by(Province,Status) %>% 
-  summarize(
-    pop_pct = sum(Population)/total.pop,
-    num = n()
-  )
-
-df.province <- puno.data %>% 
-  group_by(Province) %>% 
-  summarize(
-    pop = sum(Population),
-    num = n()
-  )
-
-
-df.affected <- puno.data %>%
-  filter(
-    Province %in% c('San Antonio de Putina', 'Melgar', 'Lampa', 'El Collao', 'Azangaro')
-  ) %>%
-  group_by(Province) %>%
-  summarize(
-    num = n()
-  )
-
-# Total number of localities n the 5 provinces most affected 
-n.affected.localities <- as.numeric(sum(df.affected$num))
-
-# Total livestock deaths in the 5 provinces most affected vs total livestock deaths across Puno
-affected.pct.livestock = (233482 + 176241 + 132860 + 68291 + 54825)/694953
-```
-
-```{r}
-# Reading in a list of districts in each of the 5 most affected provinces obtained from Wikipedia
-sample.districts <- read_csv('Puno_affected_districts.csv')
-districts <- sample.districts$District
-```
-
 # Power Analysis by Locality
 
 ##declare_population()
 ```{r population, echo=TRUE}
+# There are 589 localities in the Puno Region
+# Really not sure yet what livestock mortality typically is. 2.5% is the mean for the region over time and was 7% in 2015 (per Mauricio), and 11.2% in the worst hit parts of the region in 2015 (per the Red Cross/Red Crescent)
 population <- declare_population(
-  districts = add_level(N=length(puno.data$Status), 
-    livestock_mortality_pct = rtruncnorm(n=N, a=0, b=100, mean=2.5, sd=1),
-    frost_mortality_increase = rnorm(n = N, mean = 5, sd = 3)
+  districts = add_level(N=589, 
+    livestock_mortality_pct = rtruncnorm(n=N, a=0, b=100, mean=2.5, sd=3)
     )
   )
 
@@ -85,126 +36,12 @@ pop <- population()
 
 ##declare_potential_outcomes()
 ```{r po, echo=TRUE}
-mortality_reduction = -4
-
-potential_outcomes <- 
-  declare_potential_outcomes(
-    Y_D_0 = livestock_mortality_pct + frost_mortality_increase,
-    Y_D_1 = livestock_mortality_pct + frost_mortality_increase + mortality_reduction)
-
-po <- potential_outcomes(pop)
-
-# We are proposing that the unit-level treatment effect is mortality_reduction in % reduction of livestock that die from extreme frost.
-```
-
-##declare_sampling()
-```{r sample, echo=TRUE}
-sampling <- declare_sampling(n = n.affected.localities)
-sam <- sampling(po)
-```
-
-##declare_assignment()
-```{r assign, echo=TRUE}
-assigning <- declare_assignment(m = round(nrow(sam)/2),
-                  assignment_variable="D")
-assigned <- assigning(sam)
-
-# We're using DeclareDesign to randomly assign districts to treatment and control with a probability of 0.5. The variable 'm' denotes the number of units that declare_assignment() should place in each treatment condition, which we are asking to be equal to half of the sample per treatment condition (nrow(sam)/2).
-
-```
-
-```{r}
-ggplot(data=assigned, aes(x=as.factor(D), y=livestock_mortality_pct)) +
-geom_violin(aes(fill=as.factor(D), color=as.factor(D))) +
-theme_minimal(base_size = 24) + xlab("Assignment")
-
-# Random assignment should, in expectation, produce treatment and control groups that are statistically-identical on all observed and unobserved features.
-```
-
-
-##declare_reveal()
-```{r reveal, echo=TRUE}
-revealing <- declare_reveal(assignment_variables=D)
-```
-
-##declare_estimand()
-```{r estimand, echo=TRUE}
-estimand <- declare_estimand(ATE = -4)
-estimand(po)
-```
-
-##declare_estimator()
-```{r estimator, echo=TRUE}
-dim <- declare_estimator(Y ~ D, estimand = estimand,  
-          model =  difference_in_means, label = "DIM") 
-# Difference-in-means (Mean of treatment group - mean of control group)
-
-did <- declare_estimator(Y - livestock_mortality_pct ~ D, 
-                         estimand = estimand,  
-          model =  difference_in_means, label = "DID") 
-# Difference-in-differences ([Mean of treatment group @ endline - Mean of treatment group @ baseline] - [Mean of control group @ endline - mean of control group @ baseline])
-```
-
-
-##declare_design()
-```{r design, echo=TRUE}
-design <- population + potential_outcomes + sampling +
-          assigning + revealing + estimand + dim + did
-```
-
-
-##diagnose_design()
-```{r diagnosis, cache=TRUE}
-diagnosis <- diagnose_design(design, sims=1000)
-diagnosis$diagnosands_df[,c(1,3,5,9,11)] %>%
-  kable()
-```
-
-
-## Looking under the hood, DIM
-
-```{r underhood-dim, height=6}
-sim.out <- diagnosis$simulations
-hist(sim.out$estimate[sim.out$estimator_label == "DIM"],
-     main="Randomization Distribution",
-     xlab="Estimates in Realized Experiments",
-     xlim=c(-10,10), cex=24)
-abline(v=-4, lwd=3, col="red")
-```
-
-## Looking under the hood, DID
-
-```{r underhood-did, height=6}
-sim.out <- diagnosis$simulations
-hist(sim.out$estimate[sim.out$estimator_label == "DID"],
-     main="Randomization Distribution",
-     xlab="Estimates in Realized Experiments",
-     xlim=c(-10,10), cex=24)
-abline(v=-4, lwd=3, col="red")
-```
-
-
-
-# Power Analysis by District
-
-##declare_population()
-```{r population, echo=TRUE}
-population <- declare_population(
-  districts = add_level(N=107, 
-    livestock_mortality_pct = rtruncnorm(n=N, a=0, b=100, mean=2.5, sd=2)
-    )
-  )
-
-pop <- population()
-```
-
-##declare_potential_outcomes()
-```{r po, echo=TRUE}
+# This estimate of reduction in livestock mortality because of the introduction of the early warning system is purely an estimate - goal is eventually to find what percent gives us a satisfactory power?
 mortality_reduction = -2
 
 potential_outcomes <- 
   declare_potential_outcomes(
-    Y_D_0 = livestock_mortality_pct ,
+    Y_D_0 = livestock_mortality_pct,
     Y_D_1 = livestock_mortality_pct + mortality_reduction)
 
 po <- potential_outcomes(pop)
@@ -214,7 +51,9 @@ po <- potential_outcomes(pop)
 
 ##declare_sampling()
 ```{r sample, echo=TRUE}
-sampling <- declare_sampling(n = length(districts))
+# 197 of the 589 localities in the Puno region are located in the 5 provinces that experienced 95.8% of the region's total livestock mortality in 2015. These localities will be our sample 
+# We want to sample the hardest hit regions to give ourselves the best chance of seeing an effect, but also because it does not make sense and would be a bit unethical to test out a potential humanitarian aid intervention in a areas not in need of humanitarian aid
+sampling <- declare_sampling(n = 197)
 sam <- sampling(po)
 ```
 
@@ -223,17 +62,12 @@ sam <- sampling(po)
 assigning <- declare_assignment(m = round(nrow(sam)/2),
                   assignment_variable="D")
 assigned <- assigning(sam)
-
-# We're using DeclareDesign to randomly assign districts to treatment and control with a probability of 0.5. The variable 'm' denotes the number of units that declare_assignment() should place in each treatment condition, which we are asking to be equal to half of the sample per treatment condition (nrow(sam)/2).
-
 ```
 
 ```{r}
 ggplot(data=assigned, aes(x=as.factor(D), y=livestock_mortality_pct)) +
 geom_violin(aes(fill=as.factor(D), color=as.factor(D))) +
 theme_minimal(base_size = 24) + xlab("Assignment")
-
-# Random assignment should, in expectation, produce treatment and control groups that are statistically-identical on all observed and unobserved features.
 ```
 
 
@@ -244,13 +78,14 @@ revealing <- declare_reveal(assignment_variables=D)
 
 ##declare_estimand()
 ```{r estimand, echo=TRUE}
-estimand <- declare_estimand(ATE = -4)
+estimand <- declare_estimand(ATE = -2)
 estimand(po)
 ```
 
 ##declare_estimator()
 ```{r estimator, echo=TRUE}
-dim <- declare_estimator(Y ~ D, estimand = estimand,  
+dim <- declare_estimator(Y ~ D, 
+                         estimand = estimand,  
           model =  difference_in_means, label = "DIM") 
 # Difference-in-means (Mean of treatment group - mean of control group)
 
@@ -298,3 +133,116 @@ hist(sim.out$estimate[sim.out$estimator_label == "DID"],
 abline(v=mortality_reduction, lwd=3, col="red")
 ```
 
+
+
+# Power Analysis by District
+
+##declare_population()
+```{r population, echo=TRUE}
+# There are 107 districts in the Puno Region
+population <- declare_population(
+  districts = add_level(N=107, 
+    livestock_mortality_pct = rtruncnorm(n=N, a=0, b=100, mean=2.5, sd=3)
+    )
+  )
+
+pop <- population()
+```
+
+##declare_potential_outcomes()
+```{r po, echo=TRUE}
+potential_outcomes <- 
+  declare_potential_outcomes(
+    Y_D_0 = livestock_mortality_pct ,
+    Y_D_1 = livestock_mortality_pct + mortality_reduction)
+
+po <- potential_outcomes(pop)
+```
+
+##declare_sampling()
+```{r sample, echo=TRUE}
+# 44 of the 107 districts in the Puno region are located in the 5 provinces that experienced 95.8% of the region's total livestock mortality in 2015. These districts will be our sample 
+sampling <- declare_sampling(n = 44)
+sam <- sampling(po)
+```
+
+##declare_assignment()
+```{r assign, echo=TRUE}
+assigning <- declare_assignment(m = round(nrow(sam)/2),
+                  assignment_variable="D")
+assigned <- assigning(sam)
+
+# We're using DeclareDesign to randomly assign districts to treatment and control with a probability of 0.5. The variable 'm' denotes the number of units that declare_assignment() should place in each treatment condition, which we are asking to be equal to half of the sample per treatment condition (nrow(sam)/2).
+
+```
+
+```{r}
+ggplot(data=assigned, aes(x=as.factor(D), y=livestock_mortality_pct)) +
+geom_violin(aes(fill=as.factor(D), color=as.factor(D))) +
+theme_minimal(base_size = 24) + xlab("Assignment")
+
+# Random assignment should, in expectation, produce treatment and control groups that are statistically-identical on all observed and unobserved features.
+```
+
+
+##declare_reveal()
+```{r reveal, echo=TRUE}
+revealing <- declare_reveal(assignment_variables=D)
+```
+
+##declare_estimand()
+```{r estimand, echo=TRUE}
+estimand <- declare_estimand(ATE = -2)
+estimand(po)
+```
+
+##declare_estimator()
+```{r estimator, echo=TRUE}
+dim <- declare_estimator(Y ~ D, 
+                         estimand = estimand,  
+          model =  difference_in_means, label = "DIM") 
+# Difference-in-means (Mean of treatment group - mean of control group)
+
+did <- declare_estimator(Y - livestock_mortality_pct ~ D, 
+                         estimand = estimand,  
+          model =  difference_in_means, label = "DID") 
+# Difference-in-differences ([Mean of treatment group @ endline - Mean of treatment group @ baseline] - [Mean of control group @ endline - mean of control group @ baseline])
+```
+
+
+##declare_design()
+```{r design, echo=TRUE}
+design <- population + potential_outcomes + sampling +
+          assigning + revealing + estimand + dim + did
+```
+
+
+##diagnose_design()
+```{r diagnosis, cache=TRUE}
+diagnosis <- diagnose_design(design, sims=1000)
+diagnosis$diagnosands_df[,c(1,3,5,9,11)] %>%
+  kable()
+```
+
+
+## Looking under the hood, DIM
+
+```{r underhood-dim, height=6}
+sim.out <- diagnosis$simulations
+hist(sim.out$estimate[sim.out$estimator_label == "DIM"],
+     main="Randomization Distribution",
+     xlab="Estimates in Realized Experiments",
+     xlim=c(-10,10), cex=24)
+abline(v=mortality_reduction, lwd=3, col="red")
+```
+
+## Looking under the hood, DID
+
+```{r underhood-did, height=6}
+sim.out <- diagnosis$simulations
+hist(sim.out$estimate[sim.out$estimator_label == "DID"],
+     main="Randomization Distribution",
+     xlab="Estimates in Realized Experiments",
+     xlim=c(-10,10), cex=24)
+abline(v=mortality_reduction, lwd=3, col="red")
+```
