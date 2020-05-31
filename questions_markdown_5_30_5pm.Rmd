@@ -142,7 +142,8 @@ abline(v=mortality_reduction, lwd=3, col="red")
 # There are 107 districts in the Puno Region
 population <- declare_population(
   districts = add_level(N=107, 
-    livestock_mortality_pct = rtruncnorm(n=N, a=0, b=100, mean=2.5, sd=3)
+    livestock_mortality_pct = rgamma(n=N,  shape = 2, rate = (1/1.125)),
+    u = rnorm(n=N, mean = 0.5, sd = 0.25)
     )
   )
 
@@ -153,8 +154,8 @@ pop <- population()
 ```{r po, echo=TRUE}
 potential_outcomes <- 
   declare_potential_outcomes(
-    Y_D_0 = livestock_mortality_pct ,
-    Y_D_1 = livestock_mortality_pct + mortality_reduction)
+    Y_D_0 = livestock_mortality_pct + u,
+    Y_D_1 = livestock_mortality_pct + u + mortality_reduction)
 
 po <- potential_outcomes(pop)
 ```
@@ -168,7 +169,7 @@ sam <- sampling(po)
 
 ##declare_assignment()
 ```{r assign, echo=TRUE}
-assigning <- declare_assignment(m = round(nrow(sam)/2),
+assigning <- declare_assignment(m = 22,
                   assignment_variable="D")
 assigned <- assigning(sam)
 
